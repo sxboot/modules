@@ -9,13 +9,13 @@ steps:
 - name: init
   image: drone/git
   commands:
-  - git clone https://git.omegazero.org/sxboot/core.git ../src_core
+  - git clone https://git.omegazero.org/sxboot/core.git /src_core
 
 - name: build
   image: clang-nasm-gmake
   pull: never
   commands:
-  - make all ARCH=amd64 ROOTDIR=../src_core
+  - make all ARCH=amd64 ROOTDIR=/src_core
   depends_on:
   - init
 
@@ -31,13 +31,13 @@ steps:
 - name: init
   image: drone/git
   commands:
-  - git clone https://git.omegazero.org/sxboot/core.git ../src_core
+  - git clone https://git.omegazero.org/sxboot/core.git /src_core
 
 - name: build
   image: clang-nasm-gmake
   pull: never
   commands:
-  - make all ARCH=i386 ROOTDIR=../src_core
+  - make all ARCH=i386 ROOTDIR=/src_core
   depends_on:
   - init
 
