@@ -8,16 +8,26 @@ platform:
 steps:
 - name: init
   image: drone/git
+  volumes:
+  - name: core
+    path: /src_core
   commands:
   - git clone https://git.omegazero.org/sxboot/core.git /src_core
 
 - name: build
   image: clang-nasm-gmake
   pull: never
+  volumes:
+  - name: core
+    path: /src_core
   commands:
   - make all ARCH=amd64 ROOTDIR=/src_core
   depends_on:
   - init
+
+volumes:
+- name: core
+  temp: {}
 
 ---
 
@@ -30,16 +40,26 @@ platform:
 steps:
 - name: init
   image: drone/git
+  volumes:
+  - name: core
+    path: /src_core
   commands:
   - git clone https://git.omegazero.org/sxboot/core.git /src_core
 
 - name: build
   image: clang-nasm-gmake
   pull: never
+  volumes:
+  - name: core
+    path: /src_core
   commands:
   - make all ARCH=i386 ROOTDIR=/src_core
   depends_on:
   - init
+
+volumes:
+- name: core
+  temp: {}
 
 
 
