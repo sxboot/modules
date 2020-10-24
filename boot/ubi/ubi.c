@@ -719,6 +719,11 @@ status_t ubi_create_system_table(){
 	btable->rsdpAddress = acpi;
 	log_debug("ACPI RSDP table at %Y\n", (size_t) acpi);
 
+	if(s1data->bootFlags & S1BOOT_DATA_BOOT_FLAGS_UEFI){
+		btable->uefiSystemTable = (void*) s1data->uefiSystemTable;
+		log_debug("UEFI system table at %Y\n", (size_t) btable->uefiSystemTable);
+	}
+
 	reloc_ptr((void**) &btable->smbiosAddress);
 	reloc_ptr((void**) &btable->rsdpAddress);
 
