@@ -84,11 +84,12 @@ status_t kboot_start(parse_entry* entry){
 		FERROR(TSX_OUT_OF_MEMORY);
 	reloc_ptr((void**) &ubi_tmp_data);
 
-	if(!(entry->file != NULL)){
+	char* pfile = parse_get_option(entry, "file");
+	if(!(pfile != NULL)){
 		FERROR(TSX_MISSING_ARGUMENTS);
 	}
 
-	status = ubi_start(entry->file);
+	status = ubi_start(pfile);
 	CERROR();
 	_end:
 	if(ubi_root){
