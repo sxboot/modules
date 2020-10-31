@@ -370,7 +370,7 @@ status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t
 			break;
 		// fatal: PxIS.HBFS, PxIS.HBDS, PxIS.IFS, or PxIS.TFES
 		// non-fatal: PxIS.INFS or PxIS.OFS
-		if(arch_time() - wait_timeout >= 1000)
+		if(arch_time() - wait_timeout >= 10000)
 			FERROR(18);
 		if(port->pxis & 0x78000000){
 			FERROR(19);
