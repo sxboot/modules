@@ -21,7 +21,8 @@
 #include "ext.h"
 
 
-static uint32_t ext_incompat_support = EXT_INCOMPAT_FILETYPE | EXT_INCOMPAT_64BIT | EXT_INCOMPAT_EXTENTS | EXT_INCOMPAT_FLEX_BG;
+static uint32_t ext_incompat_support = EXT_INCOMPAT_FILETYPE | EXT_INCOMPAT_64BIT | EXT_INCOMPAT_EXTENTS | EXT_INCOMPAT_FLEX_BG |
+	EXT_INCOMPAT_RECOVER | EXT_INCOMPAT_JOURNAL_DEV;
 
 
 status_t ext_get_file(char* driveLabel, uint64_t partStart, char* path, uint32_t* inode){
