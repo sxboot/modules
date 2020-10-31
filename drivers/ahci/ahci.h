@@ -26,6 +26,7 @@
 
 #define ATA_CMD_DMA_READ 0x25
 #define ATA_CMD_DMA_WRITE 0x35
+#define ATA_CMD_IDENTIFY 0xec
 
 #pragma pack(push,1)
 typedef volatile struct hba_memory{
@@ -215,8 +216,14 @@ status_t ahci_device_init(ahci_device* device);
 status_t ahci_port_map(hba_port* port);
 status_t ahci_device_reset(ahci_device* device);
 uint8_t ahci_cmd_next_slot(hba_port* port, uint8_t maxCmd);
+status_t ahci_create_command(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t count, uint16_t prdt_entries, uint8_t command, ahci_cmd_table** tableWrite,
+		size_t* tableSizeWrite, uint8_t* slotWrite);
+status_t ahci_issue_command(uint8_t ahciNum, uint8_t portNum, uint8_t slot);
 status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t secCount, size_t mem, bool action);
+status_t ahci_device_info(uint8_t ahciNum, uint8_t portNum, uint64_t* sectors, size_t* sectorSize);
+
 status_t msio_init();
+status_t msio_get_device_info(uint8_t number, uint64_t* sectors, size_t* sectorSize);
 status_t msio_read(uint8_t number, uint64_t sector, uint16_t sectorCount, size_t dest);
 status_t msio_write(uint8_t number, uint64_t sector, uint16_t sectorCount, size_t source);
 char* msio_get_driver_type();

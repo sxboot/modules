@@ -288,13 +288,14 @@ uint8_t ahci_cmd_next_slot(hba_port* port, uint8_t maxCmd){
 	return -1;
 }
 
-status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t secCount, size_t mem, bool action){
+status_t ahci_create_command(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t count, uint16_t prdt_entries, uint8_t command, ahci_cmd_table** tableWrite,
+		size_t* tableSizeWrite, uint8_t* slotWrite){
 	status_t status = 0;
 	void* prdt = 0;
 	if(!ahci_controller_initialized(ahciNum))
-		FERROR(16);
+		FERROR(TSX_CONTROLLER_NOT_INITIALIZED);
 	if(!ahci_device_present(ahciNum, portNum))
-		FERROR(13);
+		FERROR(TSX_NO_DEVICE);
 	if(ahci_device_mapped){
 		status = ahci_device_reset_all();
 		CERROR();
@@ -306,64 +307,61 @@ status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t
 	port->pxis = (uint32_t) -1;
 	uint8_t slot = ahci_cmd_next_slot(port, ahci_controllers[ahciNum].maxCmd);
 	if(slot == 0xff)
-		FERROR(17);
+		FERROR(TSX_PORT_BUFFER_FULL);
 
-	uint16_t prdt_entries = (uint16_t) ((secCount-1)>>4)+1;
-	size_t cmdTableSize = sizeof(ahci_cmd_table) + MAX(prdt_entries, 16) * sizeof(ahci_prdt);
+	size_t cmdTableSize = sizeof(ahci_cmd_table) + prdt_entries * sizeof(ahci_prdt);
 	prdt = kmalloc(cmdTableSize);
 	if(!prdt)
 		FERROR(TSX_OUT_OF_MEMORY);
 	memset(prdt, 0, cmdTableSize);
 
 	ahci_cmd_header* header = ahci_cmdh_temp;
-	header+=slot;
+	header += slot;
 	memset(header, 0, sizeof(ahci_cmd_header));
 	header->prdtl = prdt_entries;
 	header->ctba0 = (uint32_t) vmmgr_get_physical((size_t) prdt);
 	header->ctba_u0 = 0;
-	header->flags = (sizeof(ahci_fis_h2d_reg)/4)&0x1f;
+	header->flags = (sizeof(ahci_fis_h2d_reg) / 4) & 0x1f;
 	header->flags &= ~0x40;
 
 	ahci_cmd_table* table = prdt;
 
-	uint16_t sec_left = secCount;
-	mem = vmmgr_get_physical(mem);
-	for(int i = 0; i < header->prdtl-1; i++){
-		table->prdt_entry[i].dba = mem;
-		table->prdt_entry[i].dbau = 0;
-		table->prdt_entry[i].flags = 8191;
-		table->prdt_entry[i].flags |= 0x80000000;
-		mem += 8192;
-		sec_left -= 16;
-	}
-	table->prdt_entry[header->prdtl-1].dba = mem;
-	table->prdt_entry[header->prdtl-1].dbau = 0;
-	table->prdt_entry[header->prdtl-1].flags = (sec_left * 512) - 1;
-	table->prdt_entry[header->prdtl-1].flags |= 0x80000000;
-	
 	ahci_fis_h2d_reg* cmdf = (ahci_fis_h2d_reg*) (&table->cfis);
 	cmdf->type = 0x27;
 	cmdf->flags = 0x80;
-	cmdf->cmd = action ? ATA_CMD_DMA_WRITE : ATA_CMD_DMA_READ;
-	
+	cmdf->cmd = command;
+
 	cmdf->lba_low = (uint16_t) lba;
 	cmdf->lba_mid0 = (uint8_t) (lba >> 16);
 	cmdf->lba_mid1 = (uint8_t) (lba >> 24);
 	cmdf->lba_mid2 = (uint8_t) (lba >> 32);
 	cmdf->lba_high = (uint8_t) (lba >> 40);
-	
+
 	cmdf->device = 0x40;
-	cmdf->count = (uint16_t) secCount;
-	
+	cmdf->count = count;
+
+	*tableWrite = table;
+	*tableSizeWrite = cmdTableSize;
+	_end:
+	if(prdt && status != TSX_SUCCESS)
+		kfree(prdt, cmdTableSize);
+	return status;
+}
+
+status_t ahci_issue_command(uint8_t ahciNum, uint8_t portNum, uint8_t slot){
+	status_t status = 0;
+	ahci_device* device = &ahci_controllers[ahciNum].devices[portNum];
+	hba_port* port = device->port;
+
 	size_t wait_timeout = arch_time();
 	while((port->pxtfd & 0x88) && arch_time() - wait_timeout < 1000)
 		arch_sleep(1);
 	if(arch_time() - wait_timeout >= 1000){
 		FERROR(18);
 	}
-	
+
 	port->pxci = 1 << slot;
-	
+
 	wait_timeout = arch_time();
 	while(1){
 		if((port->pxci & (1 << slot)) == 0)
@@ -380,8 +378,76 @@ status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t
 	status = ahci_device_reset(device);
 	CERROR();
 	_end:
-	if(prdt)
-		kfree(prdt, cmdTableSize);
+	return status;
+}
+
+status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t secCount, size_t mem, bool action){
+	status_t status = 0;
+
+	ahci_cmd_table* table = 0;
+	size_t tableSize = 0;
+	uint8_t slot = 0;
+	uint16_t prdt_entries = (uint16_t) ((secCount - 1) >> 4) + 1;
+	status = ahci_create_command(ahciNum, portNum, lba, secCount, prdt_entries, action ? ATA_CMD_DMA_WRITE : ATA_CMD_DMA_READ, &table, &tableSize, &slot);
+	CERROR();
+
+	uint16_t sec_left = secCount;
+	mem = vmmgr_get_physical(mem);
+	for(int i = 0; i < prdt_entries - 1; i++){
+		table->prdt_entry[i].dba = mem;
+		table->prdt_entry[i].dbau = 0;
+		table->prdt_entry[i].flags = 8191;
+		table->prdt_entry[i].flags |= 0x80000000;
+		mem += 8192;
+		sec_left -= 16;
+	}
+	table->prdt_entry[prdt_entries - 1].dba = mem;
+	table->prdt_entry[prdt_entries - 1].dbau = 0;
+	table->prdt_entry[prdt_entries - 1].flags = (sec_left * 512) - 1;
+	table->prdt_entry[prdt_entries - 1].flags |= 0x80000000;
+
+	status = ahci_issue_command(ahciNum, portNum, slot);
+	CERROR();
+	_end:
+	if(table)
+		kfree(table, tableSize);
+	return status;
+}
+
+status_t ahci_device_info(uint8_t ahciNum, uint8_t portNum, uint64_t* sectors, size_t* sectorSize){
+	status_t status = 0;
+	void* tmpBuf = kmalloc(512);
+	if(!tmpBuf)
+		FERROR(TSX_OUT_OF_MEMORY);
+
+	ahci_cmd_table* table = 0;
+	size_t tableSize = 0;
+	uint8_t slot = 0;
+	uint16_t prdt_entries = 1;
+	status = ahci_create_command(ahciNum, portNum, 0, 0, prdt_entries, ATA_CMD_IDENTIFY, &table, &tableSize, &slot);
+	CERROR();
+
+	table->prdt_entry[0].dba = vmmgr_get_physical((size_t) tmpBuf);
+	table->prdt_entry[0].dbau = 0;
+	table->prdt_entry[0].flags = 512;
+	table->prdt_entry[0].flags |= 0x80000000;
+
+	status = ahci_issue_command(ahciNum, portNum, slot);
+	CERROR();
+
+	*sectors = *((uint64_t*) (tmpBuf + 0xc8));
+
+	uint16_t sectorInfo = *((uint16_t*) (tmpBuf + 0xd4));
+	if(sectorInfo & 0x1000){ // "Device Logical Sector longer than 256 Words" (sector size valid)
+		*sectorSize = *((uint32_t*) (tmpBuf + 0xea)) * 2; // sector size is given in 2-byte words
+	}else{
+		*sectorSize = 512;
+	}
+	_end:
+	if(table)
+		kfree(table, tableSize);
+	if(tmpBuf)
+		kfree(tmpBuf, 512);
 	return status;
 }
 
@@ -407,6 +473,19 @@ status_t msio_init(){
 	}
 	_end:
 	return status;
+}
+
+status_t msio_get_device_info(uint8_t number, uint64_t* sectors, size_t* sectorSize){
+	status_t status = 0;
+	if(!ahci_initialized){
+		status = ahci_init();
+		if(status != 0)
+			return status;
+	}
+	uint16_t device = ahci_get_device(number);
+	if(device == 0xffff)
+		return TSX_NO_DEVICE;
+	return ahci_device_info(device >> 8, device & 0xff, sectors, sectorSize);
 }
 
 status_t msio_read(uint8_t number, uint64_t sector, uint16_t sectorCount, size_t dest){
