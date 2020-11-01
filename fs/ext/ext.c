@@ -106,7 +106,7 @@ status_t ext_get_path_inode(char* driveLabel, uint64_t partStart, char* path, ui
 			cInode = dirEntry->inode;
 			cType = dirEntry->file_type;
 		}
-		kfree(dirEntry, dirTableSizeAbs);
+		kfree(startEntry, dirTableSizeAbs);
 		if(!found){
 			FERROR(i == parts - 1 ? TSX_NO_SUCH_FILE : TSX_NO_SUCH_DIRECTORY);
 		}
@@ -375,7 +375,7 @@ status_t vfs_listDir(char* driveLabel, uint64_t partStart, char* path, list_arra
 			break;
 		}
 	}
-	kfree(dirEntry, dirTableSizeAbs);
+	kfree(startEntry, dirTableSizeAbs);
 	*listWrite = list;
 	_end:
 	return status;
