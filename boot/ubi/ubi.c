@@ -311,7 +311,7 @@ status_t ubi_load_kernel(char* filename){
 
 	_end:
 	if(filePath)
-		kfree(filePath, MMGR_BLOCK_SIZE);
+		kfree(filePath, strlen(filePath) + 1);
 	if(status != TSX_SUCCESS){
 		if(imglocation)
 			kfree((void*) imglocation, size);

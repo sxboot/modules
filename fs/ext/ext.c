@@ -106,7 +106,7 @@ status_t ext_get_path_inode(char* driveLabel, uint64_t partStart, char* path, ui
 			cInode = dirEntry->inode;
 			cType = dirEntry->file_type;
 		}
-		kfree(startEntry, dirTableSizeAbs);
+		kfree_aligned(startEntry, dirTableSizeAbs);
 		if(!found){
 			FERROR(i == parts - 1 ? TSX_NO_SUCH_FILE : TSX_NO_SUCH_DIRECTORY);
 		}
@@ -124,7 +124,7 @@ status_t ext_get_path_inode(char* driveLabel, uint64_t partStart, char* path, ui
 
 status_t ext_get_inode(char* driveLabel, uint64_t partStart, uint32_t inode, ext_inode* inodeData){
 	status_t status = 0;
-	ext_superblock* sb = kmalloc(4096);
+	ext_superblock* sb = kmalloc_aligned(4096);
 	if(!sb)
 		FERROR(TSX_OUT_OF_MEMORY);
 	ext_group_desc* gd = NULL;
@@ -138,7 +138,7 @@ status_t ext_get_inode(char* driveLabel, uint64_t partStart, uint32_t inode, ext
 	if(blockGroupsLen % 512 != 0)
 		blockGroupsLen += 512 - (blockGroupsLen % 512);
 
-	gd = kmalloc(blockGroupsLen);
+	gd = kmalloc_aligned(blockGroupsLen);
 	if(!gd)
 		FERROR(TSX_OUT_OF_MEMORY);
 	status = msio_read_drive(driveLabel, partStart + MAX(blockSize, 2048 /* padding + super block */) / 512, blockGroupsLen / 512, (size_t) gd);
@@ -149,7 +149,7 @@ status_t ext_get_inode(char* driveLabel, uint64_t partStart, uint32_t inode, ext
 		inodeTable |= ((uint64_t) blockGroup->bg_inode_table_hi) << 32;
 	uint32_t inodeTableOff = ((inode - 1) % sb->s_inodes_per_group) * (sb->s_rev_level > 0 ? sb->s_inode_size : 128);
 	uint64_t lba = (inodeTableOff - inodeTableOff % blockSize + inodeTable * blockSize) / 512 + partStart;
-	buf = kmalloc(blockSize);
+	buf = kmalloc_aligned(blockSize);
 	if(!buf)
 		FERROR(TSX_OUT_OF_MEMORY);
 	status = msio_read_drive(driveLabel, lba, blockSize / 512, (size_t) buf);
@@ -159,17 +159,17 @@ status_t ext_get_inode(char* driveLabel, uint64_t partStart, uint32_t inode, ext
 		memcpy(inodeData, inodeBuf, sizeof(ext_inode));
 	_end:
 	if(sb)
-		kfree(sb, 4096);
+		kfree_aligned(sb, 4096);
 	if(gd)
-		kfree(gd, blockGroupsLen);
+		kfree_aligned(gd, blockGroupsLen);
 	if(buf)
-		kfree(buf, blockSize);
+		kfree_aligned(buf, blockSize);
 	return status;
 }
 
 status_t ext_read_inode(char* driveLabel, uint64_t partStart, ext_inode* inode, void** location, size_t* size, size_t* absSizeWrite){
 	status_t status = 0;
-	ext_superblock* sb = kmalloc(4096);
+	ext_superblock* sb = kmalloc_aligned(4096);
 	if(!sb)
 		FERROR(TSX_OUT_OF_MEMORY);
 	void* loc = NULL;
@@ -181,7 +181,7 @@ status_t ext_read_inode(char* driveLabel, uint64_t partStart, ext_inode* inode, 
 	size_t absSize = inode->i_size_lo;
 	if(absSize % blockSize != 0)
 		absSize += blockSize - (absSize % blockSize);
-	loc = kmalloc(absSize);
+	loc = kmalloc_aligned(absSize);
 	if(!loc)
 		FERROR(TSX_OUT_OF_MEMORY);
 	*location = loc;
@@ -192,21 +192,21 @@ status_t ext_read_inode(char* driveLabel, uint64_t partStart, ext_inode* inode, 
 	CERROR();
 	_end:
 	if(sb)
-		kfree(sb, 4096);
+		kfree_aligned(sb, 4096);
 	if(loc && status != TSX_SUCCESS)
-		kfree(loc, absSize);
+		kfree_aligned(loc, absSize);
 	return status;
 }
 
 status_t ext_read_inode_to(char* driveLabel, uint64_t partStart, ext_inode* inode, void* location){
 	status_t status = 0;
-	ext_superblock* sb = kmalloc(4096);
+	ext_superblock* sb = kmalloc_aligned(4096);
 	if(!sb)
 		FERROR(TSX_OUT_OF_MEMORY);
 	status = msio_read_drive(driveLabel, partStart + 2, 4, (size_t) sb);
 	CERROR();
 	size_t blockSize = util_math_pow(2, 10 + sb->s_log_block_size);
-	kfree(sb, 4096);
+	kfree_aligned(sb, 4096);
 	if(inode->i_flags & EXT_INODE_EXTENTS_FL){
 		ext_extent_header* header = (ext_extent_header*) &inode->i_blocks[0];
 		status = ext_read_extent(driveLabel, partStart, header, blockSize, location);
@@ -239,7 +239,7 @@ status_t ext_read_inode_to(char* driveLabel, uint64_t partStart, ext_inode* inod
 
 status_t ext_read_indirect_blocks(char* driveLabel, uint64_t partStart, uint32_t blockSize, uint32_t blockTable, uint32_t depth, void** writeLoc){
 	status_t status = 0;
-	uint32_t* table = kmalloc(blockSize);
+	uint32_t* table = kmalloc_aligned(blockSize);
 	if(!table)
 		FERROR(TSX_OUT_OF_MEMORY);
 	status = msio_read_drive(driveLabel, blockTable * blockSize / 512 + partStart, blockSize / 512, (size_t) table);
@@ -263,13 +263,13 @@ status_t ext_read_indirect_blocks(char* driveLabel, uint64_t partStart, uint32_t
 	}
 	_end:
 	if(table)
-		kfree(table, blockSize);
+		kfree_aligned(table, blockSize);
 	return status;
 }
 
 status_t ext_read_extent(char* driveLabel, uint64_t partStart, ext_extent_header* header, size_t blockSize, void* destLocation){
 	status_t status = 0;
-	void* tempData = kmalloc(blockSize);
+	void* tempData = kmalloc_aligned(blockSize);
 	if(!tempData)
 		FERROR(TSX_OUT_OF_MEMORY);
 	if(header->eh_magic != EXT_INODE_EXTENT_HEADER_MAGIC)
@@ -293,21 +293,21 @@ status_t ext_read_extent(char* driveLabel, uint64_t partStart, ext_extent_header
 	}
 	_end:
 	if(tempData)
-		kfree(tempData, blockSize);
+		kfree_aligned(tempData, blockSize);
 	return status;
 }
 
 
 bool vfs_isFilesystem(char* driveLabel, uint64_t partStart){
-	ext_superblock* sb = kmalloc(4096);
+	ext_superblock* sb = kmalloc_aligned(4096);
 	if(!sb)
 		return FALSE;
 	status_t status = msio_read_drive(driveLabel, partStart + 2, 1, (size_t) sb);
 	if(status == TSX_SUCCESS && sb->s_magic == EXT_MAGIC && (sb->s_feature_incompat & ~ext_incompat_support) == 0){
-		kfree(sb, 4096);
+		kfree_aligned(sb, 4096);
 		return TRUE;
 	}else{
-		kfree(sb, 4096);
+		kfree_aligned(sb, 4096);
 		return FALSE;
 	}
 }
@@ -329,7 +329,7 @@ status_t vfs_readFile(char* driveLabel, uint64_t partStart, char* path, size_t d
 	memcpy((void*) dest, destTemp, fileSize);
 	_end:
 	if(destTemp)
-		kfree(destTemp, fileSizeAbs);
+		kfree_aligned(destTemp, fileSizeAbs);
 	return status;
 }
 
@@ -375,7 +375,7 @@ status_t vfs_listDir(char* driveLabel, uint64_t partStart, char* path, list_arra
 			break;
 		}
 	}
-	kfree(startEntry, dirTableSizeAbs);
+	kfree_aligned(startEntry, dirTableSizeAbs);
 	*listWrite = list;
 	_end:
 	return status;

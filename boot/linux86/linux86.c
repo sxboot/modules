@@ -59,7 +59,7 @@ status_t linux86_start(char* kernel_file, char* initrd_file, char* cmd){
 
 	size_t kernelSize = 0;
 	status = kernel_read_file(kernelFilePath, (size_t*) &kernelLocation, &kernelSize);
-	kfree(kernelFilePath, strlen(kernelFilePath));
+	kfree(kernelFilePath, strlen(kernelFilePath) + 1);
 	CERROR();
 
 	linux86_setup_header* setup_header = kernelLocation + 0x1f1;
@@ -90,7 +90,7 @@ status_t linux86_start(char* kernel_file, char* initrd_file, char* cmd){
 
 	size_t initrdSize = 0;
 	status = kernel_read_file(initrdFilePath, (size_t*) &initrdLocation, &initrdSize);
-	kfree(initrdFilePath, strlen(initrdFilePath));
+	kfree(initrdFilePath, strlen(initrdFilePath) + 1);
 	CERROR();
 
 	if((size_t) initrdLocation + initrdSize > (setup_header->version >= 0x203 ? setup_header->initrd_addr_max : 0x37ffffff))
@@ -103,7 +103,7 @@ status_t linux86_start(char* kernel_file, char* initrd_file, char* cmd){
 	setup_header->loadflags |= 0x80; // heap
 
 	setup_header->cmd_line_ptr = LINUX86_BASE_PTR + LINUX86_HEAP_END;
-	kernel_s3boot_add_mem_region(setup_header->cmd_line_ptr, MIN(0x2000, strlen(cmd)), (size_t) cmd);
+	kernel_s3boot_add_mem_region(setup_header->cmd_line_ptr, MIN(0x2000, strlen(cmd) + 1), (size_t) cmd);
 
 	uint16_t seg = LINUX86_BASE_PTR >> 4;
 

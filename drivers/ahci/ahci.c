@@ -310,7 +310,7 @@ status_t ahci_create_command(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uin
 		FERROR(TSX_PORT_BUFFER_FULL);
 
 	size_t cmdTableSize = sizeof(ahci_cmd_table) + prdt_entries * sizeof(ahci_prdt);
-	prdt = kmalloc(cmdTableSize);
+	prdt = kmalloc_aligned(cmdTableSize);
 	if(!prdt)
 		FERROR(TSX_OUT_OF_MEMORY);
 	memset(prdt, 0, cmdTableSize);
@@ -344,7 +344,7 @@ status_t ahci_create_command(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uin
 	*tableSizeWrite = cmdTableSize;
 	_end:
 	if(prdt && status != TSX_SUCCESS)
-		kfree(prdt, cmdTableSize);
+		kfree_aligned(prdt, cmdTableSize);
 	return status;
 }
 
@@ -410,13 +410,13 @@ status_t ahci_device_io(uint8_t ahciNum, uint8_t portNum, uint64_t lba, uint16_t
 	CERROR();
 	_end:
 	if(table)
-		kfree(table, tableSize);
+		kfree_aligned(table, tableSize);
 	return status;
 }
 
 status_t ahci_device_info(uint8_t ahciNum, uint8_t portNum, uint64_t* sectors, size_t* sectorSize){
 	status_t status = 0;
-	void* tmpBuf = kmalloc(512);
+	void* tmpBuf = kmalloc_aligned(512);
 	if(!tmpBuf)
 		FERROR(TSX_OUT_OF_MEMORY);
 
@@ -445,9 +445,9 @@ status_t ahci_device_info(uint8_t ahciNum, uint8_t portNum, uint64_t* sectors, s
 	}
 	_end:
 	if(table)
-		kfree(table, tableSize);
+		kfree_aligned(table, tableSize);
 	if(tmpBuf)
-		kfree(tmpBuf, 512);
+		kfree_aligned(tmpBuf, 512);
 	return status;
 }
 
@@ -456,13 +456,13 @@ static char* msio_driver_type = "ahci";
 status_t msio_init(){
 	status_t status = 0;
 	if(!ahci_initialized){
-		ahci_rfis_temp = kmalloc(sizeof(ahci_rec_fis));
+		ahci_rfis_temp = kmalloc_aligned(sizeof(ahci_rec_fis));
 		if(ahci_rfis_temp == NULL)
 			FERROR(TSX_OUT_OF_MEMORY);
 		memset((void*) ahci_rfis_temp, 0, sizeof(ahci_rec_fis));
 		reloc_ptr((void**) &ahci_rfis_temp);
 
-		ahci_cmdh_temp = kmalloc(sizeof(ahci_cmd_header) * 32);
+		ahci_cmdh_temp = kmalloc_aligned(sizeof(ahci_cmd_header) * 32);
 		if(ahci_cmdh_temp == NULL)
 			FERROR(TSX_OUT_OF_MEMORY);
 		memset(ahci_cmdh_temp, 0, sizeof(ahci_cmd_header) * 32);
