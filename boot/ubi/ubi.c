@@ -864,6 +864,7 @@ status_t ubi_post_init(){
 		ubi_set_checksum(table, ubi_get_table_size(table->magic));
 		table = table->nextTable;
 	}
+	arch_disable_hw_interrupts();
 	_end:
 	return status;
 }
