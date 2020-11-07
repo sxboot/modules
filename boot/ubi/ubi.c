@@ -56,6 +56,8 @@ static size_t ubi_kernel_offset = 0;
 
 static ubi_b_table_header* lastTable = NULL;
 
+static char* kernel_args = NULL;
+
 
 static void* ubi_tmp_data = NULL;
 
@@ -88,6 +90,8 @@ status_t kboot_start(parse_entry* entry){
 	if(!(pfile != NULL)){
 		FERROR(TSX_MISSING_ARGUMENTS);
 	}
+
+	kernel_args = parse_get_option(entry, "args");
 
 	status = ubi_start(pfile);
 	CERROR();
@@ -424,8 +428,8 @@ status_t ubi_create_tables(ubi_table_header* kroottable){
 	CERROR();
 	status = ubi_create_loader_table();
 	CERROR();
-	/*status = ubi_create_cmd_table();
-	CERROR();*/
+	status = ubi_create_cmd_table();
+	CERROR();
 	status = ubi_create_bdrive_table();
 	CERROR();
 	_end:
@@ -801,6 +805,8 @@ status_t ubi_create_loader_table(){
 
 status_t ubi_create_cmd_table(){
 	status_t status = 0;
+	if(!kernel_args)
+		goto _end;
 
 	ubi_b_cmd_table* btable = kmalloc(sizeof(ubi_b_cmd_table));
 	if(!btable){
@@ -812,7 +818,7 @@ status_t ubi_create_cmd_table(){
 	lastTable->nextTable = (ubi_b_table_header*) btable;
 	lastTable = (ubi_b_table_header*) btable;
 
-	btable->cmd = ""; // currently not supported
+	btable->cmd = kernel_args;
 
 	reloc_ptr((void**) &btable->cmd);
 
