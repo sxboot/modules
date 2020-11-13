@@ -11,7 +11,7 @@
  */
 /*
  * ubi.c - Implementation of the UBI boot protocol.
- * Specification is not available yet.
+ * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20201111.pdf
  */
 
 #include <klibc/stdlib.h>
