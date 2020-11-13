@@ -27,7 +27,6 @@
 #define UBI_B_MODULES_MAGIC 0x808eb4ad53444f4d
 #define UBI_B_SYS_MAGIC 0x801ad6e75f535953
 #define UBI_B_MEMMAP_MAGIC 0x80f604c750414d4d
-#define UBI_B_SERVICES_MAGIC 0x80cca1c056525342
 #define UBI_B_LOADER_MAGIC 0x8083ae8620424c42
 #define UBI_B_CMD_MAGIC 0x80a4f8a34c444d43
 #define UBI_B_BDRIVE_MAGIC 0x80c8cda856524442
@@ -51,6 +50,7 @@
 #define UBI_STATUS_UNAVAILABLE 12
 #define UBI_STATUS_OUT_OF_MEMORY 13
 #define UBI_STATUS_NOT_FOUND 14
+#define UBI_STATUS_IO_ERROR 15
 
 #define UBI_API __attribute__((sysv_abi))
 
@@ -62,14 +62,6 @@
 
 typedef uint16_t ubi_status_t;
 typedef size_t uintn_t;
-
-
-
-typedef struct ubi_b_table_header* (UBI_API *UBI_GET_TABLE)(uint64_t magic);
-typedef ubi_status_t (UBI_API *UBI_UEFI_EXIT)();
-
-typedef ubi_status_t (UBI_API *UBI_ALLOCATE_PAGES)(uintn_t size, void** dest);
-typedef ubi_status_t (UBI_API *UBI_READ_FILE)(const char* path, void** dest);
 
 
 
@@ -150,9 +142,6 @@ typedef struct ubi_b_root_table{
 	uint16_t reserved;
 
 	uint32_t flags;
-
-	UBI_GET_TABLE getTable;
-	UBI_UEFI_EXIT uefiExit;
 } ubi_b_root_table;
 
 
@@ -234,14 +223,6 @@ typedef struct ubi_b_memmap_table{
 } ubi_b_memmap_table;
 
 
-typedef struct ubi_b_services_table{
-	ubi_b_table_header hdr; // magic = UBI_B_SERVICES_MAGIC
-
-	UBI_ALLOCATE_PAGES allocPages;
-	UBI_READ_FILE readFile;
-} ubi_b_services_table;
-
-
 typedef struct ubi_b_loader_table{
 	ubi_b_table_header hdr; // magic = UBI_B_LOADER_MAGIC
 
@@ -260,6 +241,9 @@ typedef struct ubi_b_bdrive_table{
 	ubi_b_table_header hdr; // magic = UBI_B_BDRIVE_MAGIC
 
 	char type[8];
+	uint16_t partitionFormat;
+	uint8_t signature[16];
+	uint32_t partNum;
 	uint32_t other;
 } ubi_b_bdrive_table;
 #pragma pack(pop)
@@ -303,8 +287,6 @@ size_t ubi_get_random_kernel_offset(size_t kernelBase, size_t kaslrSize);
 
 ubi_status_t ubi_convert_to_ubi_status(status_t status);
 ubi_b_table_header* UBI_API ubi_srv_getTable(uint64_t magic);
-ubi_status_t UBI_API ubi_srv_uefiExit();
-ubi_status_t UBI_API ubi_srv_allocPages(uintn_t size, void** dest);
-ubi_status_t UBI_API ubi_srv_readFile(const char* path, void** dest);
+// boot loader services removed in UBI 1.0 draft 20201111
 
 #endif /* __UBI_H__ */

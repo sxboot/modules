@@ -129,10 +129,6 @@ status_t ubi_start(char* file){
 	ubi_root->specificationVersionMinor = UBI_VERSION_MINOR;
 	log_debug("Universal Boot Interface version %u.%u\n", UBI_VERSION_MAJOR, UBI_VERSION_MINOR);
 	ubi_root->flags |= (s1data->bootFlags & S1BOOT_DATA_BOOT_FLAGS_UEFI) ? UBI_FLAGS_FIRMWARE_UEFI : UBI_FLAGS_FIRMWARE_BIOS;
-	ubi_root->getTable = &ubi_srv_getTable;
-	reloc_ptr((void**) &ubi_root->getTable);
-	ubi_root->uefiExit = &ubi_srv_uefiExit;
-	reloc_ptr((void**) &ubi_root->uefiExit);
 	ubi_set_checksum(&ubi_root->hdr, sizeof(ubi_b_root_table));
 	lastTable = &ubi_root->hdr;
 
@@ -423,8 +419,6 @@ status_t ubi_create_tables(ubi_table_header* kroottable){
 	status = ubi_create_system_table();
 	CERROR();
 	status = ubi_create_memmap_table();
-	CERROR();
-	status = ubi_create_services_table();
 	CERROR();
 	status = ubi_create_loader_table();
 	CERROR();
@@ -728,9 +722,6 @@ status_t ubi_create_system_table(){
 		log_debug("UEFI system table at %Y\n", (size_t) btable->uefiSystemTable);
 	}
 
-	reloc_ptr((void**) &btable->smbiosAddress);
-	reloc_ptr((void**) &btable->rsdpAddress);
-
 	_end:
 	return status;
 }
@@ -749,29 +740,6 @@ status_t ubi_create_memmap_table(){
 	lastTable = (ubi_b_table_header*) btable;
 
 	// initialization is done in ubi_post_init
-
-	_end:
-	return status;
-}
-
-status_t ubi_create_services_table(){
-	status_t status = 0;
-
-	ubi_b_services_table* btable = kmalloc(sizeof(ubi_b_services_table));
-	if(!btable){
-		FERROR(TSX_OUT_OF_MEMORY);
-	}
-	memset(btable, 0, sizeof(ubi_b_services_table));
-	btable->hdr.magic = UBI_B_SERVICES_MAGIC;
-	reloc_ptr((void**) &btable->hdr.nextTable);
-	lastTable->nextTable = (ubi_b_table_header*) btable;
-	lastTable = (ubi_b_table_header*) btable;
-
-	btable->allocPages = ubi_srv_allocPages;
-	btable->readFile = ubi_srv_readFile;
-
-	reloc_ptr((void**) &btable->allocPages);
-	reloc_ptr((void**) &btable->readFile);
 
 	_end:
 	return status;
@@ -1039,7 +1007,6 @@ size_t ubi_get_table_size(uint64_t magic){
 		case UBI_B_MODULES_MAGIC: return sizeof(ubi_b_module_table);
 		case UBI_B_SYS_MAGIC: return sizeof(ubi_b_system_table);
 		case UBI_B_MEMMAP_MAGIC: return sizeof(ubi_b_memmap_table);
-		case UBI_B_SERVICES_MAGIC: return sizeof(ubi_b_services_table);
 		case UBI_B_LOADER_MAGIC: return sizeof(ubi_b_loader_table);
 		case UBI_B_CMD_MAGIC: return sizeof(ubi_b_cmd_table);
 		case UBI_B_BDRIVE_MAGIC: return sizeof(ubi_b_bdrive_table);
@@ -1071,15 +1038,6 @@ size_t ubi_get_random_kernel_offset(size_t kernelBase, size_t kaslrSize){
 }
 
 
-
-#define UBI_STATUS_SUCCESS 0
-#define UBI_STATUS_ERROR 1
-#define UBI_STATUS_UNSUPPORTED 10
-#define UBI_STATUS_INVALID 11
-#define UBI_STATUS_UNAVAILABLE 12
-#define UBI_STATUS_OUT_OF_MEMORY 13
-#define UBI_STATUS_NOT_FOUND 14
-#define UBI_STATUS_IO_ERROR 15
 
 static ubi_status_t ubi_errors[ERRCODE_COUNT] = {
 	UBI_STATUS_SUCCESS,
@@ -1142,37 +1100,5 @@ ubi_b_table_header* UBI_API ubi_srv_getTable(uint64_t magic){
 	}
 	return NULL;
 }
-
-ubi_status_t UBI_API ubi_srv_uefiExit(){
-	return ubi_convert_to_ubi_status(kernel_exit_uefi());
-}
-
-ubi_status_t UBI_API ubi_srv_allocPages(uintn_t size, void** dest){
-	if(dest == NULL || size == 0)
-		return UBI_STATUS_INVALID;
-	ubi_alloc_virtual(dest, size);
-	if(*dest == NULL)
-		return UBI_STATUS_OUT_OF_MEMORY;
-	return ubi_convert_to_ubi_status(ubi_recreate_memmap());
-}
-
-ubi_status_t UBI_API ubi_srv_readFile(const char* path, void** dest){
-	if(dest == NULL || path == NULL)
-		return UBI_STATUS_INVALID;
-	char* readpath = ubi_tmp_data;
-	snprintf(readpath, UBI_TMP_DATA_SIZE, "%s%s", kernelPartition, path);
-	size_t fileSize = 0;
-	status_t status = vfs_get_file_size(readpath, &fileSize);
-	if(status != TSX_SUCCESS)
-		return ubi_convert_to_ubi_status(status);
-	ubi_alloc_virtual(dest, fileSize);
-	if(*dest == NULL)
-		return UBI_STATUS_OUT_OF_MEMORY;
-	status = vfs_read_file(readpath, (size_t) *dest);
-	if(status != TSX_SUCCESS)
-		return ubi_convert_to_ubi_status(status);
-	return ubi_convert_to_ubi_status(ubi_recreate_memmap());
-}
-
 
 
