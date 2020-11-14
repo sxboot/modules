@@ -475,7 +475,8 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 
 		kernel_move_stack((size_t) btable->stackLocation, btable->stackSize);
 
-		if((table->flags & 0x1) && ubi_kernel_type == 1 && ((elf_file*) ubi_kernel_location)->e_type == ELF_ET_DYN){ // KASLR bit
+		bool elfDyn = ((elf_file*) ubi_kernel_location)->e_type == ELF_ET_DYN;
+		if((table->flags & 0x1) && ubi_kernel_type == 1 && elfDyn){ // KASLR bit
 			size_t kernelSize = ubi_kernel_top - ubi_kernel_base;
 			if(kernelSize > table->kaslrSize){
 				log_error("Kernel size is larger than kaslrSize\n");
@@ -487,6 +488,8 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 			}
 			ubi_kernel_offset = ubi_get_random_kernel_offset((size_t) table->kernelBase, table->kaslrSize);
 			btable->flags |= 1; // KASLR bit
+		}else if(elfDyn){ // no kaslr, but relocatable
+			ubi_kernel_offset = (size_t) table->kernelBase;
 		}
 	}else{
 		btable->heapLocation = 0;
