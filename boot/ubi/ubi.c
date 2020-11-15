@@ -585,22 +585,7 @@ status_t ubi_create_vid_table(ubi_k_video_table* table){
 			ubi_clearScreen = TRUE;
 	}
 
-	uint8_t mode;
-	size_t width, height, bpp, pitch, cursorPosX, cursorPosY;
-	stdio64_get_mode(&mode, &width, &height, &bpp, &pitch, &btable->framebufferAddress);
-	btable->width = width;
-	btable->height = height;
-	btable->bpp = bpp;
-	btable->pitch = pitch;
-	btable->flags |= mode == STDIO64_MODE_GRAPHICS ? 2 : 1;
-
-	stdio64_get_cursor_pos(&cursorPosX, &cursorPosY);
-	btable->cursorPosX = cursorPosX;
-	btable->cursorPosY = cursorPosY;
-	if(mode == STDIO64_MODE_GRAPHICS){
-		btable->cursorPosX *= STDIO64_GRAPHICS_CHAR_WIDTH;
-		btable->cursorPosY *= STDIO64_GRAPHICS_CHAR_HEIGHT;
-	}
+	// table settings set in post init
 
 	reloc_ptr((void**) &btable->framebufferAddress);
 
@@ -844,12 +829,33 @@ status_t ubi_post_init(){
 	log_debug("Memory map contains %u entries\n", ((ubi_b_memmap_table*) ubi_srv_getTable(UBI_B_MEMMAP_MAGIC))->length);
 
 
+	ubi_b_video_table* videoTable = ((ubi_b_video_table*) ubi_srv_getTable(UBI_B_VID_MAGIC));
+
+	uint8_t mode;
+	size_t width, height, bpp, pitch, cursorPosX, cursorPosY;
+	stdio64_get_mode(&mode, &width, &height, &bpp, &pitch, &videoTable->framebufferAddress);
+	videoTable->width = width;
+	videoTable->height = height;
+	videoTable->bpp = bpp;
+	videoTable->pitch = pitch;
+	videoTable->flags |= mode == STDIO64_MODE_GRAPHICS ? 2 : 1;
+
+	stdio64_get_cursor_pos(&cursorPosX, &cursorPosY);
+	videoTable->cursorPosX = cursorPosX;
+	videoTable->cursorPosY = cursorPosY;
+	if(mode == STDIO64_MODE_GRAPHICS){
+		videoTable->cursorPosX *= STDIO64_GRAPHICS_CHAR_WIDTH;
+		videoTable->cursorPosY *= STDIO64_GRAPHICS_CHAR_HEIGHT;
+	}
+
+
 	ubi_b_table_header* table = (ubi_b_table_header*) ubi_root;
 	while(table){
 		ubi_set_checksum(table, ubi_get_table_size(table->magic));
 		table = table->nextTable;
 	}
 	arch_disable_hw_interrupts();
+	stdio64_update_screen();
 	_end:
 	return status;
 }
