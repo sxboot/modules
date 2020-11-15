@@ -345,6 +345,7 @@ status_t ubi_load_kernel_segs(){
 			void* secLoc = mmgr_alloc_block_sequential(ph[i].p_memsz);
 			if(!secLoc)
 				FERROR(TSX_OUT_OF_MEMORY);
+			mmgr_reserve_mem_region((size_t) secLoc, ph[i].p_memsz, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", ph[i].p_vaddr + ubi_kernel_offset, (size_t) secLoc, ph[i].p_memsz, ph[i].p_offset, ph[i].p_filesz);
 			for(size_t addr = 0; addr < ph[i].p_memsz; addr += 0x1000){
 				if(vmmgr_is_address_accessible(ph[i].p_vaddr + ubi_kernel_offset + addr)){
@@ -373,6 +374,7 @@ status_t ubi_load_kernel_segs(){
 			void* secLoc = mmgr_alloc_block_sequential(sections[i].ps_vsize);
 			if(!secLoc)
 				FERROR(TSX_OUT_OF_MEMORY);
+			mmgr_reserve_mem_region((size_t) secLoc, sections[i].ps_vsize, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", sections[i].ps_vaddr, (size_t) secLoc, sections[i].ps_vsize, sections[i].ps_fileoff, sections[i].ps_rawsize);
 			for(size_t addr = 0; addr < sections[i].ps_vsize; addr += 0x1000){
 				if(vmmgr_is_address_accessible(sections[i].ps_vaddr + addr)){
@@ -978,9 +980,12 @@ void ubi_alloc_virtual(void** addr, size_t size){
 	if(used){
 		anyAddr:
 		*addr = kmalloc(size);
+		mmgr_reserve_mem_region(vmmgr_get_physical((size_t) (*addr)), size, MMGR_MEMTYPE_OS);
 	}else{
+		vmmgr_map_pages_req(mmgr_get_used_blocks() * MMGR_BLOCK_SIZE + size);
 		size_t paddr = (size_t) mmgr_alloc_block_sequential(size);
 		if(paddr){
+			mmgr_reserve_mem_region(paddr, size, MMGR_MEMTYPE_OS);
 			for(size_t addr = 0; addr < size; addr += 0x1000){
 				vmmgr_map_page(paddr + addr, vaddr + addr);
 			}
