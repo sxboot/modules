@@ -95,6 +95,9 @@ typedef struct ubi_k_mem_table{
 	void* stackLocation;
 	uintn_t stackSize;
 
+	void* idMapLocation;
+	uintn_t idMapSize;
+
 	void* kernelBase;
 	uintn_t kaslrSize;
 } ubi_k_mem_table;
@@ -155,6 +158,9 @@ typedef struct ubi_b_mem_table{
 
 	void* stackLocation;
 	uintn_t stackSize;
+
+	void* idMapLocation;
+	uintn_t idMapSize;
 
 	void* kernelBase;
 } ubi_b_mem_table;

@@ -11,7 +11,7 @@
  */
 /*
  * ubi.c - Implementation of the UBI boot protocol.
- * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20201111.pdf
+ * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20201115.pdf
  */
 
 #include <klibc/stdlib.h>
@@ -482,6 +482,14 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 		btable->stackSize = table->stackSize;
 
 		kernel_move_stack((size_t) btable->stackLocation, btable->stackSize);
+
+		if(table->idMapSize > 0){
+			for(size_t addr = 0; addr < table->idMapSize - (table->idMapSize & 0xfff); addr += 0x1000){
+				vmmgr_map_page(addr, (size_t) table->idMapLocation + addr);
+			}
+			btable->idMapLocation = table->idMapLocation;
+			btable->idMapSize = table->idMapSize;
+		}
 
 		bool elfDyn = ((elf_file*) ubi_kernel_location)->e_type == ELF_ET_DYN;
 		if((table->flags & 0x1) && ubi_kernel_type == 1 && elfDyn){ // KASLR bit
