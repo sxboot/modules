@@ -347,7 +347,7 @@ status_t ubi_load_kernel_segs(){
 				FERROR(TSX_OUT_OF_MEMORY);
 			mmgr_reserve_mem_region((size_t) secLoc, ph[i].p_memsz, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", ph[i].p_vaddr + ubi_kernel_offset, (size_t) secLoc, ph[i].p_memsz, ph[i].p_offset, ph[i].p_filesz);
-			for(size_t addr = 0; addr < ph[i].p_memsz; addr += 0x1000){
+			for(size_t addr = 0; addr < ph[i].p_memsz + ph[i].p_vaddr % 0x1000; addr += 0x1000){
 				if(vmmgr_is_address_accessible(ph[i].p_vaddr + ubi_kernel_offset + addr)){
 					continue;
 				}
@@ -376,7 +376,7 @@ status_t ubi_load_kernel_segs(){
 				FERROR(TSX_OUT_OF_MEMORY);
 			mmgr_reserve_mem_region((size_t) secLoc, sections[i].ps_vsize, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", sections[i].ps_vaddr, (size_t) secLoc, sections[i].ps_vsize, sections[i].ps_fileoff, sections[i].ps_rawsize);
-			for(size_t addr = 0; addr < sections[i].ps_vsize; addr += 0x1000){
+			for(size_t addr = 0; addr < sections[i].ps_vsize + sections[i].ps_vaddr % 0x1000; addr += 0x1000){
 				if(vmmgr_is_address_accessible(sections[i].ps_vaddr + addr)){
 					continue;
 				}
