@@ -280,7 +280,7 @@ status_t ubi_load_kernel(char* filename){
 		ubi_kernel_base = minAddr;
 		ubi_kernel_top = maxAddr;
 	}else{
-		log_error("File format not recognized");
+		log_error("File format not recognized\n");
 		FERROR(TSX_INVALID_FORMAT);
 	}
 	if(!ubi_kernel){
