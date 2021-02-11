@@ -11,7 +11,7 @@
  */
 /*
  * ubi.c - Implementation of the UBI boot protocol.
- * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20201115.pdf
+ * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20210211.pdf
  */
 
 #include <klibc/stdlib.h>
@@ -648,7 +648,7 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 			if(addr){
 				ubi_alloc_virtual(&addr, size);
 			}else{
-				addr = kmalloc(size);
+				addr = kmalloc_aligned(size);
 			}
 
 			status = vfs_read_file(readpath, (size_t) addr);
