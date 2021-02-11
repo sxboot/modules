@@ -654,6 +654,7 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 			status = vfs_read_file(readpath, (size_t) addr);
 			kfree(readpath, readpathlen);
 			CERROR();
+			printf("\n");
 
 			ubi_b_module_entry* mentry = kmalloc(sizeof(ubi_b_module_entry));
 			mentry->path = akpath;
