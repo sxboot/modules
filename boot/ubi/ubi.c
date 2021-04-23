@@ -841,7 +841,7 @@ status_t ubi_post_init(){
 	videoTable->height = height;
 	videoTable->bpp = bpp;
 	videoTable->pitch = pitch;
-	videoTable->flags |= mode == STDIO64_MODE_GRAPHICS ? UBI_FLAGS_VIDEO_MODE_GRAPHICS : UBI_FLAGS_VIDEO_MODE_TEXT;
+	videoTable->flags |= mode == STDIO64_MODE_GRAPHICS ? UBI_FLAGS_VIDEO_GRAPHICS : UBI_FLAGS_VIDEO_TEXT;
 
 	stdio64_get_cursor_pos(&cursorPosX, &cursorPosY);
 	videoTable->cursorPosX = cursorPosX;
