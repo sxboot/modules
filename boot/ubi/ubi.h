@@ -57,6 +57,16 @@
 #define UBI_FLAGS_FIRMWARE_UEFI 1
 #define UBI_FLAGS_FIRMWARE_UEFI_EXIT 0x4
 
+#define UBI_FLAGS_MEMORY_KASLR 0x1
+#define UBI_FLAGS_MEMORY_EXT_PAGING 0x2
+
+#define UBI_FLAGS_VIDEO_TEXT 0x1
+#define UBI_FLAGS_VIDEO_GRAPHICS 0x2
+#define UBI_FLAGS_VIDEO_CLEAR_SCREEN 0x4
+
+#define UBI_MASK_VIDEO_MODE 0x3
+#define UBI_MASK_SYSTEM_SMBIOS_VERSION 0xf
+
 
 typedef uint16_t ubi_status_t;
 typedef size_t uintn_t;

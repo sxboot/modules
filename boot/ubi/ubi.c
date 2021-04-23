@@ -11,7 +11,7 @@
  */
 /*
  * ubi.c - Implementation of the UBI boot protocol.
- * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0_draft_20210211.pdf
+ * Specification: https://static.omegazero.org/d/spec/ubi/ubi_1_0.pdf
  */
 
 #include <klibc/stdlib.h>
@@ -40,6 +40,7 @@
 
 
 static s1boot_data* s1data = NULL;
+static parse_entry* configData = NULL;
 
 static char* kernelPartition = NULL;
 static char* kernelPath = NULL;
@@ -65,17 +66,18 @@ static bool ubi_clearScreen = FALSE;
 status_t kboot_start(parse_entry* entry){
 	status_t status = 0;
 	s1data = kernel_get_s1data();
+	configData = entry;
 
 	reloc_ptr((void**) &ubi_root);
 	reloc_ptr((void**) &ubi_kernel);
 	reloc_ptr((void**) &ubi_kernel_location);
 
-	char* pfile = parse_get_option(entry, "file");
+	char* pfile = parse_get_option(configData, "file");
 	if(!(pfile != NULL)){
 		FERROR(TSX_MISSING_ARGUMENTS);
 	}
 
-	kernel_args = parse_get_option(entry, "args");
+	kernel_args = parse_get_option(configData, "args");
 
 	status = ubi_start(pfile);
 	CERROR();
@@ -117,7 +119,7 @@ status_t ubi_start(char* file){
 	reloc_ptr((void**) &ubi_root->hdr.nextTable);
 	ubi_root->specificationVersionMajor = UBI_VERSION_MAJOR;
 	ubi_root->specificationVersionMinor = UBI_VERSION_MINOR;
-	log_debug("Universal Boot Interface version %u.%u\n", UBI_VERSION_MAJOR, UBI_VERSION_MINOR);
+	log_info("Universal Boot Interface version %u.%u\n", UBI_VERSION_MAJOR, UBI_VERSION_MINOR);
 	ubi_root->flags |= (s1data->bootFlags & S1BOOT_DATA_BOOT_FLAGS_UEFI) ? UBI_FLAGS_FIRMWARE_UEFI : UBI_FLAGS_FIRMWARE_BIOS;
 	ubi_set_checksum(&ubi_root->hdr, sizeof(ubi_b_root_table));
 	lastTable = &ubi_root->hdr;
@@ -141,10 +143,10 @@ status_t ubi_start(char* file){
 	status = ubi_create_tables(&ubi_kernel->hdr);
 	CERROR();
 
-	if(!(ubi_kernel->flags & 0x4)){ // not keep boot services
+	if(!(ubi_kernel->flags & UBI_FLAGS_FIRMWARE_UEFI_EXIT)){ // not keep boot services
 		status = kernel_exit_uefi();
 		CERROR();
-		ubi_root->flags |= 0x4; // set exit boot services called
+		ubi_root->flags |= UBI_FLAGS_FIRMWARE_UEFI_EXIT; // set exit boot services called
 	}
 
 	status = ubi_load_kernel_segs();
@@ -486,7 +488,7 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 		}
 
 		bool elfDyn = ((elf_file*) ubi_kernel_location)->e_type == ELF_ET_DYN;
-		if((table->flags & 0x1) && ubi_kernel_type == 1 && elfDyn){ // KASLR bit
+		if((table->flags & UBI_FLAGS_MEMORY_KASLR) && ubi_kernel_type == 1 && elfDyn && !parse_get_boolean(configData, "disableKaslr")){
 			size_t kernelSize = ubi_kernel_top - ubi_kernel_base;
 			if(kernelSize > table->kaslrSize){
 				log_error("Kernel size is larger than kaslrSize\n");
@@ -497,7 +499,7 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 				FERROR(TSX_ERROR);
 			}
 			ubi_kernel_offset = ubi_get_random_kernel_offset((size_t) table->kernelBase, table->kaslrSize);
-			btable->flags |= 1; // KASLR bit
+			btable->flags |= UBI_FLAGS_MEMORY_KASLR;
 		}else if(elfDyn){ // no kaslr, but relocatable
 			ubi_kernel_offset = (size_t) table->kernelBase;
 		}
@@ -543,7 +545,7 @@ status_t ubi_create_vid_table(ubi_k_video_table* table){
 
 	if(table){
 		log_debug("Table %Y @ %Y\n", (size_t) table->hdr.magic, (size_t) table);
-		uint8_t kvidmode = table->flags & 0x3;
+		uint8_t kvidmode = table->flags & UBI_MASK_VIDEO_MODE;
 		if(kvidmode == 1){
 			status = kernel_set_video(80, 25, 16, 0);
 			CERROR();
@@ -583,7 +585,7 @@ status_t ubi_create_vid_table(ubi_k_video_table* table){
 		}
 		arch_sleep(200);
 
-		if(table->flags & 0x4)
+		if(table->flags & UBI_FLAGS_VIDEO_CLEAR_SCREEN)
 			ubi_clearScreen = TRUE;
 	}
 
@@ -633,7 +635,7 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 			char* readpath = kmalloc(readpathlen);
 			snprintf(readpath, readpathlen, "%s%s", kernelPartition, akpath);
 
-			log_debug("Loading %s ", readpath);
+			log_info("Loading %s ", readpath);
 			size_t size = 0;
 			status = vfs_get_file_size(readpath, &size);
 			if(status != TSX_SUCCESS)kfree(readpath, readpathlen);
@@ -670,18 +672,14 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 		reloc_ptr((void**) &btable->modules[i].loadAddress);
 	}
 
-	clearList:
-	for(size_t i = 0; i < modlist->length; i++){
-		kfree(list_array_get(modlist, i), sizeof(ubi_b_module_entry));
-	}
-	list_array_delete(modlist);
-	modlist = NULL;
 	_end:
 	if(modlist){
-		goto clearList;
-	}else{
-		printNlnr();
+		for(size_t i = 0; i < modlist->length; i++){
+			kfree(list_array_get(modlist, i), sizeof(ubi_b_module_entry));
+		}
+		list_array_delete(modlist);
 	}
+	printNlnr();
 	return status;
 }
 
@@ -825,7 +823,7 @@ status_t ubi_post_init(){
 
 	if(ubi_clearScreen){
 		clearScreen(0x7);
-		((ubi_b_video_table*) ubi_get_boot_table(UBI_B_VID_MAGIC))->flags |= 0x4;
+		((ubi_b_video_table*) ubi_get_boot_table(UBI_B_VID_MAGIC))->flags |= UBI_FLAGS_VIDEO_CLEAR_SCREEN;
 	}
 
 
@@ -843,7 +841,7 @@ status_t ubi_post_init(){
 	videoTable->height = height;
 	videoTable->bpp = bpp;
 	videoTable->pitch = pitch;
-	videoTable->flags |= mode == STDIO64_MODE_GRAPHICS ? 2 : 1;
+	videoTable->flags |= mode == STDIO64_MODE_GRAPHICS ? UBI_FLAGS_VIDEO_MODE_GRAPHICS : UBI_FLAGS_VIDEO_MODE_TEXT;
 
 	stdio64_get_cursor_pos(&cursorPosX, &cursorPosY);
 	videoTable->cursorPosX = cursorPosX;
