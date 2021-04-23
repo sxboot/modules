@@ -59,32 +59,16 @@ static ubi_b_table_header* lastTable = NULL;
 static char* kernel_args = NULL;
 
 
-static void* ubi_tmp_data = NULL;
-
-
 static bool ubi_clearScreen = FALSE;
 
 
 status_t kboot_start(parse_entry* entry){
 	status_t status = 0;
 	s1data = kernel_get_s1data();
-	ubi_root = NULL;
-	ubi_kernel = NULL;
-	ubi_kernel_type = 0;
-	ubi_kernel_location = NULL;
-	ubi_kernel_base = 0;
-	ubi_kernel_top = 0;
-	ubi_kernel_offset = 0;
-	lastTable = NULL;
 
 	reloc_ptr((void**) &ubi_root);
 	reloc_ptr((void**) &ubi_kernel);
 	reloc_ptr((void**) &ubi_kernel_location);
-
-	ubi_tmp_data = kmalloc(UBI_TMP_DATA_SIZE); // cannot use kmalloc in ubi services
-	if(!ubi_tmp_data)
-		FERROR(TSX_OUT_OF_MEMORY);
-	reloc_ptr((void**) &ubi_tmp_data);
 
 	char* pfile = parse_get_option(entry, "file");
 	if(!(pfile != NULL)){
@@ -103,12 +87,18 @@ status_t kboot_start(parse_entry* entry){
 			table = table->nextTable;
 		}
 	}
-	if(ubi_tmp_data){
-		kfree(ubi_tmp_data, UBI_TMP_DATA_SIZE);
-	}
-	del_reloc_ptr((void**) &ubi_root);
 	del_reloc_ptr((void**) &ubi_kernel_location);
-	del_reloc_ptr((void**) &ubi_tmp_data);
+	del_reloc_ptr((void**) &ubi_kernel);
+	del_reloc_ptr((void**) &ubi_root);
+
+	ubi_root = NULL;
+	ubi_kernel = NULL;
+	ubi_kernel_type = 0;
+	ubi_kernel_location = NULL;
+	ubi_kernel_base = 0;
+	ubi_kernel_top = 0;
+	ubi_kernel_offset = 0;
+	lastTable = NULL;
 	return status;
 }
 
@@ -347,7 +337,10 @@ status_t ubi_load_kernel_segs(){
 				FERROR(TSX_OUT_OF_MEMORY);
 			mmgr_reserve_mem_region((size_t) secLoc, ph[i].p_memsz, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", ph[i].p_vaddr + ubi_kernel_offset, (size_t) secLoc, ph[i].p_memsz, ph[i].p_offset, ph[i].p_filesz);
-			for(size_t addr = 0; addr < ph[i].p_memsz + ph[i].p_vaddr % 0x1000; addr += 0x1000){
+
+			size_t segSize = ph[i].p_memsz + ph[i].p_vaddr % VMMGR_PAGE_SIZE;
+			vmmgr_map_pages_req(mmgr_get_used_blocks() * MMGR_BLOCK_SIZE + segSize);
+			for(size_t addr = 0; addr < segSize; addr += VMMGR_PAGE_SIZE){
 				if(vmmgr_is_address_accessible(ph[i].p_vaddr + ubi_kernel_offset + addr)){
 					continue;
 				}
@@ -376,7 +369,10 @@ status_t ubi_load_kernel_segs(){
 				FERROR(TSX_OUT_OF_MEMORY);
 			mmgr_reserve_mem_region((size_t) secLoc, sections[i].ps_vsize, MMGR_MEMTYPE_OS);
 			log_debug("%Y -> %Y (0x%X) : 0x%X (0x%X)\n", sections[i].ps_vaddr, (size_t) secLoc, sections[i].ps_vsize, sections[i].ps_fileoff, sections[i].ps_rawsize);
-			for(size_t addr = 0; addr < sections[i].ps_vsize + sections[i].ps_vaddr % 0x1000; addr += 0x1000){
+
+			size_t segSize = sections[i].ps_vsize + sections[i].ps_vaddr % VMMGR_PAGE_SIZE;
+			vmmgr_map_pages_req(mmgr_get_used_blocks() * MMGR_BLOCK_SIZE + segSize);
+			for(size_t addr = 0; addr < segSize; addr += VMMGR_PAGE_SIZE){
 				if(vmmgr_is_address_accessible(sections[i].ps_vaddr + addr)){
 					continue;
 				}
@@ -484,9 +480,7 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 		kernel_move_stack((size_t) btable->stackLocation, btable->stackSize);
 
 		if(table->idMapSize > 0){
-			for(size_t addr = 0; addr < table->idMapSize - (table->idMapSize & 0xfff); addr += 0x1000){
-				vmmgr_map_page(addr, (size_t) table->idMapLocation + addr);
-			}
+			vmmgr_map_pages(0, (size_t) table->idMapLocation, table->idMapSize - (table->idMapSize & 0xfff));
 			btable->idMapLocation = table->idMapLocation;
 			btable->idMapSize = table->idMapSize;
 		}
@@ -704,6 +698,7 @@ status_t ubi_create_system_table(){
 	lastTable->nextTable = (ubi_b_table_header*) btable;
 	lastTable = (ubi_b_table_header*) btable;
 
+#ifdef ARCH_UPSTREAM_x86
 	void* smbios = util_search_mem("_SM3_", 0xf0000, 0xffff, 16);
 	if(smbios){
 		btable->flags |= 3;
@@ -721,6 +716,7 @@ status_t ubi_create_system_table(){
 		acpi = util_search_mem("RSD PTR ", 0x80000, 0x1000, 16);
 	btable->rsdpAddress = acpi;
 	log_debug("ACPI RSDP table at %Y\n", (size_t) acpi);
+#endif
 
 	if(s1data->bootFlags & S1BOOT_DATA_BOOT_FLAGS_UEFI){
 		btable->uefiSystemTable = (void*) s1data->uefiSystemTable;
@@ -825,20 +821,20 @@ status_t ubi_post_init(){
 
 	log_debug("ubi_b_root_table=%Y\n", (size_t) ubi_root);
 
-	((ubi_b_mem_table*) ubi_srv_getTable(UBI_B_MEM_MAGIC))->kernelBase = (void*) (ubi_kernel_base + ubi_kernel_offset);
+	((ubi_b_mem_table*) ubi_get_boot_table(UBI_B_MEM_MAGIC))->kernelBase = (void*) (ubi_kernel_base + ubi_kernel_offset);
 
 	if(ubi_clearScreen){
 		clearScreen(0x7);
-		((ubi_b_video_table*) ubi_srv_getTable(UBI_B_VID_MAGIC))->flags |= 0x4;
+		((ubi_b_video_table*) ubi_get_boot_table(UBI_B_VID_MAGIC))->flags |= 0x4;
 	}
 
 
 	status = ubi_recreate_memmap();
 	CERROR();
-	log_debug("Memory map contains %u entries\n", ((ubi_b_memmap_table*) ubi_srv_getTable(UBI_B_MEMMAP_MAGIC))->length);
+	log_debug("Memory map contains %u entries\n", ((ubi_b_memmap_table*) ubi_get_boot_table(UBI_B_MEMMAP_MAGIC))->length);
 
 
-	ubi_b_video_table* videoTable = ((ubi_b_video_table*) ubi_srv_getTable(UBI_B_VID_MAGIC));
+	ubi_b_video_table* videoTable = ((ubi_b_video_table*) ubi_get_boot_table(UBI_B_VID_MAGIC));
 
 	uint8_t mode;
 	size_t width, height, bpp, pitch, cursorPosX, cursorPosY;
@@ -872,7 +868,7 @@ status_t ubi_post_init(){
 static size_t ubi_last_memmap_blen = 0;
 
 status_t ubi_recreate_memmap(){
-	ubi_b_memmap_table* memmaptable = (ubi_b_memmap_table*) ubi_srv_getTable(UBI_B_MEMMAP_MAGIC);
+	ubi_b_memmap_table* memmaptable = (ubi_b_memmap_table*) ubi_get_boot_table(UBI_B_MEMMAP_MAGIC);
 	if(memmaptable->entries && ubi_last_memmap_blen){
 		kfree(memmaptable->entries, ubi_last_memmap_blen);
 	}
@@ -973,6 +969,7 @@ size_t ubi_get_elf_reldyn_var_addr(size_t addr){ // gets rela addend for a varia
 	return 0;
 }
 
+
 void ubi_set_checksum(ubi_b_table_header* table, size_t totalTableSize){
 	uint32_t val = 0;
 	for(size_t addr = (size_t) table + sizeof(ubi_b_table_header); addr < (size_t) table + totalTableSize; addr++){
@@ -981,12 +978,13 @@ void ubi_set_checksum(ubi_b_table_header* table, size_t totalTableSize){
 	table->checksum = 0x100000000 - val;
 }
 
+
 void ubi_alloc_virtual(void** addr, size_t size){
 	size_t vaddr = (size_t) (*addr);
 	if(vaddr == 0)
 		goto anyAddr;
 	bool used = FALSE;
-	for(size_t addr = vaddr; addr < vaddr + size; addr += 0x1000){
+	for(size_t addr = vaddr; addr < vaddr + size; addr += VMMGR_PAGE_SIZE){
 		if(vmmgr_is_address_accessible(addr)){
 			used = TRUE;
 			break;
@@ -1001,7 +999,7 @@ void ubi_alloc_virtual(void** addr, size_t size){
 		size_t paddr = (size_t) mmgr_alloc_block_sequential(size);
 		if(paddr){
 			mmgr_reserve_mem_region(paddr, size, MMGR_MEMTYPE_OS);
-			for(size_t addr = 0; addr < size; addr += 0x1000){
+			for(size_t addr = 0; addr < size; addr += VMMGR_PAGE_SIZE){
 				vmmgr_map_page(paddr + addr, vaddr + addr);
 			}
 		}else{
@@ -1009,6 +1007,7 @@ void ubi_alloc_virtual(void** addr, size_t size){
 		}
 	}
 }
+
 
 ubi_table_header* ubi_get_kernel_table(uint64_t magic){
 	ubi_table_header* table = (ubi_table_header*) ubi_kernel;
@@ -1023,6 +1022,17 @@ ubi_table_header* ubi_get_kernel_table(uint64_t magic){
 	}
 	return NULL;
 }
+
+ubi_b_table_header* ubi_get_boot_table(uint64_t magic){
+	ubi_b_table_header* table = (ubi_b_table_header*) ubi_root;
+	while(table){
+		if(table->magic == magic)
+			return table;
+		table = table->nextTable;
+	}
+	return NULL;
+}
+
 
 size_t ubi_get_table_size(uint64_t magic){
 	switch(magic){
@@ -1064,70 +1074,6 @@ size_t ubi_get_random_kernel_offset(size_t kernelBase, size_t kaslrSize){
 	size_t offset = arch_rand(kaslrSize - (ubi_kernel_top - ubi_kernel_base));
 	offset -= offset & 0xfff; // randomization is page aligned
 	return kernelBase + offset;
-}
-
-
-
-static ubi_status_t ubi_errors[ERRCODE_COUNT] = {
-	UBI_STATUS_SUCCESS,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_OUT_OF_MEMORY, // 10
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_IO_ERROR,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_IO_ERROR,
-	UBI_STATUS_OUT_OF_MEMORY,
-	UBI_STATUS_IO_ERROR,
-	UBI_STATUS_IO_ERROR,
-	UBI_STATUS_NOT_FOUND, // 20
-	UBI_STATUS_INVALID,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_INVALID,
-	UBI_STATUS_INVALID,
-	UBI_STATUS_INVALID,
-	UBI_STATUS_OUT_OF_MEMORY,
-	UBI_STATUS_OUT_OF_MEMORY,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_UNSUPPORTED, // 30
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_ERROR,
-	UBI_STATUS_NOT_FOUND,
-	UBI_STATUS_INVALID,
-	UBI_STATUS_INVALID,
-	UBI_STATUS_UNSUPPORTED,
-	UBI_STATUS_UNSUPPORTED,
-	UBI_STATUS_INVALID
-};
-
-ubi_status_t ubi_convert_to_ubi_status(status_t status){
-	if(status >= ERRCODE_COUNT)
-		return UBI_STATUS_ERROR;
-	else
-		return ubi_errors[status];
-}
-
-ubi_b_table_header* UBI_API ubi_srv_getTable(uint64_t magic){
-	ubi_b_table_header* table = (ubi_b_table_header*) ubi_root;
-	while(table){
-		if(table->magic == magic)
-			return table;
-		table = table->nextTable;
-	}
-	return NULL;
 }
 
 

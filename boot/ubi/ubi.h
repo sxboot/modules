@@ -52,8 +52,6 @@
 #define UBI_STATUS_NOT_FOUND 14
 #define UBI_STATUS_IO_ERROR 15
 
-#define UBI_API __attribute__((sysv_abi))
-
 
 #define UBI_FLAGS_FIRMWARE_BIOS 0
 #define UBI_FLAGS_FIRMWARE_UEFI 1
@@ -257,9 +255,6 @@ typedef struct ubi_b_bdrive_table{
 
 
 
-#define UBI_TMP_DATA_SIZE MMGR_BLOCK_SIZE * 2
-
-
 status_t ubi_start(char* file);
 status_t ubi_load_kernel(char* file);
 status_t ubi_load_kernel_segs();
@@ -283,16 +278,17 @@ ubi_status_t ubi_call_kernel();
 void* ubi_get_file_addr(size_t vaddr);
 size_t ubi_get_elf_reldyn_var_addr_f(size_t addr);
 size_t ubi_get_elf_reldyn_var_addr(size_t addr);
+
 void ubi_set_checksum(ubi_b_table_header* table, size_t totalTableSize);
+
 void ubi_alloc_virtual(void** addr, size_t size);
+
 ubi_table_header* ubi_get_kernel_table(uint64_t magic);
+ubi_b_table_header* ubi_get_boot_table(uint64_t magic);
+
 size_t ubi_get_table_size(uint64_t magic);
 uint32_t ubi_convert_to_ubi_memtype(uint32_t memtype);
 size_t ubi_get_random_kernel_offset(size_t kernelBase, size_t kaslrSize);
 
-
-ubi_status_t ubi_convert_to_ubi_status(status_t status);
-ubi_b_table_header* UBI_API ubi_srv_getTable(uint64_t magic);
-// boot loader services removed in UBI 1.0 draft 20201111
 
 #endif /* __UBI_H__ */
