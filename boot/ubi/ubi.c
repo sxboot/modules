@@ -436,6 +436,7 @@ status_t ubi_create_tables(ubi_table_header* kroottable){
 	return status;
 }
 
+
 status_t ubi_create_mem_table(ubi_k_mem_table* table){
 	status_t status = 0;
 
@@ -514,6 +515,7 @@ status_t ubi_create_mem_table(ubi_k_mem_table* table){
 	_end:
 	return status;
 }
+
 
 static uint32_t commonVideoModes[8][2] = {
 	{320, 200},
@@ -597,15 +599,53 @@ status_t ubi_create_vid_table(ubi_k_video_table* table){
 	return status;
 }
 
+
+status_t ubi_load_module(list_array* modlist, char* path, void* loadAddress){
+	status_t status = 0;
+	size_t readpathlen = strlen(path) + 16;
+	char* readpath = kmalloc(readpathlen);
+	if(!readpath)
+		FERROR(TSX_OUT_OF_MEMORY);
+	snprintf(readpath, readpathlen, "%s%s", kernelPartition, path);
+
+	log_info("Loading %s ", readpath);
+	size_t size = 0;
+	status = vfs_get_file_size(readpath, &size);
+	CERROR();
+	void* addr = loadAddress;
+	if(addr){
+		ubi_alloc_virtual(&addr, size);
+	}else{
+		addr = kmalloc_aligned(size);
+	}
+	if(!addr)
+		FERROR(TSX_OUT_OF_MEMORY);
+
+	status = vfs_read_file(readpath, (size_t) addr);
+	CERROR();
+	printf("\n");
+
+	ubi_b_module_entry* mentry = kmalloc(sizeof(ubi_b_module_entry));
+	mentry->path = path;
+	mentry->loadAddress = addr;
+	mentry->size = size;
+	list_array_push(modlist, mentry);
+	_end:
+	if(readpath)
+		kfree(readpath, readpathlen);
+	return status;
+}
+
 status_t ubi_create_module_table(ubi_k_module_table* table){
 	status_t status = 0;
 
 	list_array* modlist = NULL;
+	size_t configListLen = 0;
+	char* configList = NULL;
 
 	ubi_b_module_table* btable = kmalloc(sizeof(ubi_b_module_table));
-	if(!btable){
+	if(!btable)
 		FERROR(TSX_OUT_OF_MEMORY);
-	}
 	memset(btable, 0, sizeof(ubi_b_module_table));
 	btable->hdr.magic = UBI_B_MODULES_MAGIC;
 	reloc_ptr((void**) &btable->hdr.nextTable);
@@ -617,6 +657,8 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 		FERROR(TSX_OUT_OF_MEMORY);
 	}
 	ubi_b_module_entry* kentry = kmalloc(sizeof(ubi_b_module_entry));
+	if(!kentry)
+		FERROR(TSX_OUT_OF_MEMORY);
 	kentry->path = kernelPath;
 	kentry->loadAddress = (void*) kernelImgLocation;
 	kentry->size = kernelImgSize;
@@ -631,37 +673,35 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 			}else{
 				akpath = ubi_get_file_addr((size_t) (table->modules[i].path));
 			}
-			size_t readpathlen = strlen(akpath) + 16;
-			char* readpath = kmalloc(readpathlen);
-			snprintf(readpath, readpathlen, "%s%s", kernelPartition, akpath);
-
-			log_info("Loading %s ", readpath);
-			size_t size = 0;
-			status = vfs_get_file_size(readpath, &size);
-			if(status != TSX_SUCCESS)kfree(readpath, readpathlen);
+			status = ubi_load_module(modlist, akpath, table->modules[i].loadAddress);
 			CERROR();
-			void* addr = table->modules[i].loadAddress;
-			if(addr){
-				ubi_alloc_virtual(&addr, size);
-			}else{
-				addr = kmalloc_aligned(size);
-			}
-
-			status = vfs_read_file(readpath, (size_t) addr);
-			kfree(readpath, readpathlen);
-			CERROR();
-			printf("\n");
-
-			ubi_b_module_entry* mentry = kmalloc(sizeof(ubi_b_module_entry));
-			mentry->path = akpath;
-			mentry->loadAddress = addr;
-			mentry->size = size;
-			list_array_push(modlist, mentry);
 		}
+	}
+	char* configListO = parse_get_option(configData, "modules");
+	if(configListO){
+		configListLen = strlen(configListO) + 1;
+		configList = kmalloc(configListLen);
+		if(!configList)
+			FERROR(TSX_OUT_OF_MEMORY);
+		memcpy(configList, configListO, configListLen);
+		char* current = configList;
+		while(current){
+			char* next = strchr(current, ':');
+			if(next){
+				*next = 0;
+				next++;
+			}
+			status = ubi_load_module(modlist, current, NULL);
+			CERROR();
+			current = next;
+		}
+		// strings in configList will be referenced by UBI table
 	}
 
 	btable->length = modlist->length;
 	btable->modules = kmalloc(modlist->length * sizeof(ubi_b_module_entry));
+	if(!btable->modules)
+		FERROR(TSX_OUT_OF_MEMORY);
 	reloc_ptr((void**) &btable->modules);
 	for(size_t i = 0; i < modlist->length; i++){
 		ubi_b_module_entry* entry = list_array_get(modlist, i);
@@ -679,9 +719,13 @@ status_t ubi_create_module_table(ubi_k_module_table* table){
 		}
 		list_array_delete(modlist);
 	}
+	if(status != TSX_SUCCESS && configList){
+		kfree(configList, configListLen);
+	}
 	printNlnr();
 	return status;
 }
+
 
 status_t ubi_create_system_table(){
 	status_t status = 0;
@@ -725,6 +769,7 @@ status_t ubi_create_system_table(){
 	return status;
 }
 
+
 status_t ubi_create_memmap_table(){
 	status_t status = 0;
 
@@ -743,6 +788,7 @@ status_t ubi_create_memmap_table(){
 	_end:
 	return status;
 }
+
 
 status_t ubi_create_loader_table(){
 	status_t status = 0;
@@ -770,6 +816,7 @@ status_t ubi_create_loader_table(){
 	return status;
 }
 
+
 status_t ubi_create_cmd_table(){
 	status_t status = 0;
 	if(!kernel_args)
@@ -792,6 +839,7 @@ status_t ubi_create_cmd_table(){
 	_end:
 	return status;
 }
+
 
 status_t ubi_create_bdrive_table(){
 	status_t status = 0;
